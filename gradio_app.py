@@ -1,36 +1,31 @@
 import gradio as gr
 import torch
 import torchvision.transforms as transforms
-from torchvision import models
-from torch import nn
 from PIL import Image
+import os
 
-# ======================
-# MODEL AYARLARI
-# ======================
-class_names = [
-    "Cardboard",
-    "Food Organics",
-    "Glass",
-    "Metal",
-    "Miscellaneous Trash",
-    "Paper",
-    "Plastic",
-    "Textile Trash",
-    "Vegetation"
+from src.model import get_model
+
+# --------------------
+# MODEL YÜKLEME
+# --------------------
+MODEL_PATH = "models/realwaste_resnet18.pth"
+CLASS_NAMES = [
+    "Cardboard", "Food Organics", "Glass",
+    "Metal", "Paper", "Plastic",
+    "Textile Trash", "Vegetation", "Wood"
 ]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = models.resnet18(weights=None)
-model.fc = nn.Linear(model.fc.in_features, len(class_names))
-model.load_state_dict(torch.load("models/realwaste_resnet18.pth", map_location=device))
+model = get_model(num_classes=len(CLASS_NAMES))
+model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
 model.to(device)
 model.eval()
 
-# ======================
-# IMAGE TRANSFORM
-# ======================
+# --------------------
+# TRANSFORM
+# --------------------
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -40,111 +35,117 @@ transform = transforms.Compose([
     )
 ])
 
-# ======================
-# TAHMIN FONKSIYONU
-# ======================
+# --------------------
+# TAHMİN FONKSİYONU
+# --------------------
 def predict(image):
     if image is None:
         return "Lütfen bir görüntü yükleyin."
 
-    image = Image.fromarray(image)
     image = transform(image).unsqueeze(0).to(device)
 
     with torch.no_grad():
         outputs = model(image)
-        probs = torch.softmax(outputs, dim=1)
-        pred = torch.argmax(probs, dim=1).item()
-        confidence = probs[0][pred].item()
+        probs = torch.softmax(outputs, dim=1)[0]
+        pred_idx = torch.argmax(probs).item()
 
-    return f"""
-Tahmin Edilen Sınıf: {class_names[pred]}
-Güven Oranı: %{confidence*100:.2f}
-"""
+    result = f"""
+    Tahmin Edilen Sınıf: {CLASS_NAMES[pred_idx]}
 
-# ======================
-# CUSTOM CSS (RENK BURADA)
-# ======================
+    Olasılık Değeri: {probs[pred_idx]*100:.2f} %
+    """
+    return result
+
+# --------------------
+# ÖRNEK GÖRSELLER
+# --------------------
+examples = [
+    "demo_images/carton.jpg",
+    "demo_images/organic.jpg",
+    "demo_images/plastic.jpg"
+]
+
+# --------------------
+# CSS (RENK + BOYUT DÜZENİ)
+# --------------------
 custom_css = """
 body {
-    background-color: #f4f6f8;
+    background-color: #f4f6f9;
 }
 
-#header {
-    background-color: #2c3e50;
-    color: white;
-    padding: 20px;
-    border-radius: 12px;
+#title {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+#subtitle {
+    text-align: center;
+    font-size: 16px;
+    color: #4b5563;
     margin-bottom: 20px;
 }
 
-.card {
-    background-color: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+.gr-button {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-radius: 8px;
 }
 
-footer {
-    color: #555;
+.gr-box {
+    border-radius: 12px;
 }
 """
 
-# ======================
-# GRADIO ARAYUZ
-# ======================
-with gr.Blocks(css=custom_css, theme=gr.themes.Base()) as demo:
+# --------------------
+# ARAYÜZ
+# --------------------
+with gr.Blocks() as demo:
 
-    gr.HTML("""
-    <div id="header">
-        <h2>Atık Görüntülerinde Derin Öğrenme ile Sınıflandırma</h2>
-        <p>RealWaste veri seti ile eğitilmiş ResNet18 modeli</p>
-    </div>
-    """)
+    gr.Markdown(
+        "<div id='title'>Atık Görüntülerinde Derin Öğrenme ile Sınıflandırma</div>"
+    )
+    gr.Markdown(
+        "<div id='subtitle'>RealWaste veri seti ile eğitilmiş ResNet18 modeli</div>"
+    )
 
     with gr.Row():
         with gr.Column(scale=1):
-            gr.HTML("<div class='card'>")
             image_input = gr.Image(
-                label="Atık Görüntüsü Yükle",
-                type="numpy",
-                height=220
+                label="Atık Görüntüsü",
+                type="pil",
+                height=250
             )
             predict_btn = gr.Button("Tahmin Et")
-            gr.HTML("</div>")
 
         with gr.Column(scale=1):
-            gr.HTML("<div class='card'>")
-            output = gr.Textbox(
+            output_text = gr.Textbox(
                 label="Model Çıktısı",
-                lines=5
+                lines=6
             )
-            gr.HTML("</div>")
-
-    gr.Markdown("### Hazır Örnek Görseller")
 
     gr.Examples(
-        examples=[
-            "demo_images/cardboard.jpg",
-            "demo_images/organic.jpg",
-            "demo_images/plastic.jpg"
-        ],
-        inputs=image_input
+        examples=examples,
+        inputs=image_input,
+        label="Hazır Örnekler (Tıklayarak Deneyin)"
     )
 
     predict_btn.click(
         fn=predict,
         inputs=image_input,
-        outputs=output
+        outputs=output_text
     )
 
-    gr.Markdown("""
-    ---
-    **Model:** ResNet18 (Transfer Learning)  
-    **Veri Seti:** RealWaste  
-    **Sınıf Sayısı:** 9  
-    """)
+# --------------------
+# ÇALIŞTIR
+# --------------------
+demo.launch(
+    css=custom_css,
+    theme=gr.themes.Base(),
+    share=True
+)
 
-demo.launch()
 
 
 
