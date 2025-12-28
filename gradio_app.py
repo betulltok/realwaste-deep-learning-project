@@ -1,39 +1,40 @@
-import gradio as gr
 import torch
-import torchvision.transforms as transforms
-from torchvision import models
+import gradio as gr
+from torchvision import models, transforms
 from torch import nn
 from PIL import Image
 
-# ===============================
-# SINIF İSİMLERİ
-# ===============================
-class_names = [
-    'Cardboard',
-    'Food Organics',
-    'Glass',
-    'Metal',
-    'Miscellaneous Trash',
-    'Paper',
-    'Plastic',
-    'Textile Trash',
-    'Vegetation'
-]
-
+# -----------------------
+# AYARLAR
+# -----------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ===============================
-# MODEL YÜKLE
-# ===============================
+class_names = [
+    "Cardboard",
+    "Food Organics",
+    "Glass",
+    "Metal",
+    "Miscellaneous Trash",
+    "Paper",
+    "Plastic",
+    "Textile Trash",
+    "Vegetation"
+]
+
+# -----------------------
+# MODEL YÜKLEME
+# -----------------------
 model = models.resnet18(weights=None)
 model.fc = nn.Linear(model.fc.in_features, len(class_names))
-model.load_state_dict(torch.load("models/realwaste_resnet18.pth", map_location=device))
+model.load_state_dict(
+    torch.load("models/realwaste_resnet18.pth", map_location=device)
+)
 model.to(device)
 model.eval()
 
-# ===============================
+# -----------------------
 # TRANSFORM
-# ===============================
+# -----------------------
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -43,68 +44,58 @@ transform = transforms.Compose([
     )
 ])
 
-# ===============================
+# -----------------------
 # TAHMİN FONKSİYONU
-# ===============================
+# -----------------------
 def predict(image):
-    image = Image.fromarray(image)
+    image = Image.fromarray(image).convert("RGB")
     image = transform(image).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        output = model(image)
-        probs = torch.softmax(output, dim=1)[0]
-        conf, pred = torch.max(probs, 0)
+        outputs = model(image)
+        probs = torch.softmax(outputs, dim=1)[0]
 
-    predicted_class = class_names[pred.item()]
-    confidence = conf.item() * 100
+    idx = torch.argmax(probs).item()
+    confidence = probs[idx].item()
 
-    return predicted_class, f"{confidence:.2f}%"
+    return f"Tahmin: {class_names[idx]}\nGüven: %{confidence*100:.2f}"
 
-# ===============================
-# GRADIO ARAYÜZ
-# ===============================
+# -----------------------
+# GRADIO ARAYÜZÜ
+# -----------------------
 with gr.Blocks() as demo:
 
+    gr.Markdown("## Atık Sınıflandırma Sistemi")
     gr.Markdown(
-        """
-        # Atik Siniflandirma Sistemi
-        Derin ogrenme tabanli goruntu analizi ile atik turu tahmini.
-        """
+        "Bir atık görseli yükleyin veya aşağıdaki örneklerden birini seçin."
     )
 
-    with gr.Row():
-        with gr.Column():
-            image_input = gr.Image(
-                type="numpy",
-                label="Atik Goruntusu Yukle"
-            )
-            analyze_btn = gr.Button("Analiz Et")
+    image_input = gr.Image(type="numpy", label="Girdi Görseli")
+    output_text = gr.Textbox(label="Model Çıktısı")
 
-        with gr.Column():
-            class_output = gr.Textbox(
-                label="Tahmin Edilen Sinif",
-                interactive=False
-            )
-            conf_output = gr.Textbox(
-                label="Guven Orani",
-                interactive=False
-            )
+    predict_button = gr.Button("Analiz Et")
 
-    analyze_btn.click(
+    gr.Examples(
+        examples=[
+            ["demo_images/cardboard.jpeg"],
+            ["demo_images/organic.jpeg"],
+            ["demo_images/plastic.jpeg"]
+        ],
+        inputs=image_input,
+        label="Örnek Görseller"
+    )
+
+    predict_button.click(
         fn=predict,
         inputs=image_input,
-        outputs=[class_output, conf_output]
+        outputs=output_text
     )
 
-    gr.Markdown(
-        """
-        ---
-        Model: ResNet18 (Transfer Learning)  
-        Veri Seti: RealWaste  
-        Sinif Sayisi: 9
-        """
-    )
+# -----------------------
+# ÇALIŞTIR
+# -----------------------
+if __name__ == "__main__":
+    demo.launch(share=True)
 
-demo.launch(share=True)
 
 
