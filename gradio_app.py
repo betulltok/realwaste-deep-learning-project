@@ -97,4 +97,14 @@ with gr.Blocks() as demo:
     )
 
     gr.Markdown(
+        """
+        ---
+        Model: ResNet18 (Transfer Learning)  
+        Veri Seti: RealWaste  
+        Sinif Sayisi: 9
+        """
+    )
+
+demo.launch(share=True)
+
 
