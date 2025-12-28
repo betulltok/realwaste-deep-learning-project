@@ -4,12 +4,10 @@ import torchvision.transforms as transforms
 from torchvision import models
 from torch import nn
 from PIL import Image
-import numpy as np
-import plotly.graph_objects as go
 
-# ===============================
-# MODEL ve SINIFLAR
-# ===============================
+# ======================
+# MODEL AYARLARI
+# ======================
 class_names = [
     "Cardboard",
     "Food Organics",
@@ -26,162 +24,129 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model = models.resnet18(weights=None)
 model.fc = nn.Linear(model.fc.in_features, len(class_names))
-model.load_state_dict(
-    torch.load("models/realwaste_resnet18.pth", map_location=device)
-)
+model.load_state_dict(torch.load("models/realwaste_resnet18.pth", map_location=device))
 model.to(device)
 model.eval()
 
-# ===============================
-# GÖRÜNTÜ DÖNÜŞÜMÜ
-# ===============================
+# ======================
+# IMAGE TRANSFORM
+# ======================
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(
-        [0.485, 0.456, 0.406],
-        [0.229, 0.224, 0.225]
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
     )
 ])
 
-# ===============================
-# TAHMİN FONKSİYONU
-# ===============================
+# ======================
+# TAHMIN FONKSIYONU
+# ======================
 def predict(image):
     if image is None:
-        return None, "Lütfen bir görüntü yükleyin."
+        return "Lütfen bir görüntü yükleyin."
 
-    image_pil = Image.fromarray(image)
-    image_tensor = transform(image_pil).unsqueeze(0).to(device)
+    image = Image.fromarray(image)
+    image = transform(image).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        outputs = model(image_tensor)
-        probs = torch.softmax(outputs, dim=1)[0].cpu().numpy()
+        outputs = model(image)
+        probs = torch.softmax(outputs, dim=1)
+        pred = torch.argmax(probs, dim=1).item()
+        confidence = probs[0][pred].item()
 
-    confidences = dict(zip(class_names, probs))
-    predicted_class = max(confidences, key=confidences.get)
-
-    # Grafik
-    fig = go.Figure(
-        data=[
-            go.Bar(
-                x=list(confidences.values()),
-                y=list(confidences.keys()),
-                orientation="h"
-            )
-        ]
-    )
-    fig.update_layout(
-        title="Sınıflara Göre Güven Skorları",
-        xaxis_title="Olasılık",
-        yaxis_title="Sınıf",
-        height=350
-    )
-
-    result_text = f"""
-### Tahmin Sonucu
-
-**Tahmin Edilen Sınıf:** {predicted_class}
-
-**Güven Oranı:** {confidences[predicted_class]:.2%}
+    return f"""
+Tahmin Edilen Sınıf: {class_names[pred]}
+Güven Oranı: %{confidence*100:.2f}
 """
 
-    return fig, result_text
-
-# ===============================
-# CSS (SADE + ŞIK)
-# ===============================
+# ======================
+# CUSTOM CSS (RENK BURADA)
+# ======================
 custom_css = """
 body {
     background-color: #f4f6f8;
 }
 
-.header {
-    background: #2c3e50;
-    padding: 18px;
-    border-radius: 10px;
-    text-align: center;
+#header {
+    background-color: #2c3e50;
     color: white;
+    padding: 20px;
+    border-radius: 12px;
     margin-bottom: 20px;
 }
 
-.section-box {
-    background: white;
-    padding: 16px;
-    border-radius: 10px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+.card {
+    background-color: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+
+footer {
+    color: #555;
 }
 """
 
-# ===============================
-# GRADIO ARAYÜZÜ
-# ===============================
+# ======================
+# GRADIO ARAYUZ
+# ======================
 with gr.Blocks(css=custom_css, theme=gr.themes.Base()) as demo:
 
     gr.HTML("""
-    <div class="header">
+    <div id="header">
         <h2>Atık Görüntülerinde Derin Öğrenme ile Sınıflandırma</h2>
         <p>RealWaste veri seti ile eğitilmiş ResNet18 modeli</p>
     </div>
     """)
 
     with gr.Row():
-
-        # SOL PANEL
         with gr.Column(scale=1):
-            with gr.Group(elem_classes="section-box"):
-                gr.Markdown("### Görüntü Yükleme")
+            gr.HTML("<div class='card'>")
+            image_input = gr.Image(
+                label="Atık Görüntüsü Yükle",
+                type="numpy",
+                height=220
+            )
+            predict_btn = gr.Button("Tahmin Et")
+            gr.HTML("</div>")
 
-                image_input = gr.Image(
-                    label="Atık Görüntüsü",
-                    type="numpy",
-                    height=230
-                )
-
-                predict_btn = gr.Button("Tahmin Et")
-
-                gr.Markdown("### Hazır Örnekler")
-                gr.Markdown(
-                    "Aşağıdaki örnek görsellerden birine tıklayarak otomatik yükleyebilirsiniz."
-                )
-
-        # SAĞ PANEL
         with gr.Column(scale=1):
-            with gr.Group(elem_classes="section-box"):
-                gr.Markdown("### Model Çıktısı")
+            gr.HTML("<div class='card'>")
+            output = gr.Textbox(
+                label="Model Çıktısı",
+                lines=5
+            )
+            gr.HTML("</div>")
 
-                plot_output = gr.Plot()
-                result_output = gr.Markdown()
+    gr.Markdown("### Hazır Örnek Görseller")
 
-    predict_btn.click(
-        fn=predict,
-        inputs=image_input,
-        outputs=[plot_output, result_output]
-    )
-
-    # OTOMATİK ÖRNEK GÖRSELLER
     gr.Examples(
         examples=[
             "demo_images/cardboard.jpg",
             "demo_images/organic.jpg",
             "demo_images/plastic.jpg"
         ],
+        inputs=image_input
+    )
+
+    predict_btn.click(
+        fn=predict,
         inputs=image_input,
-        label="Örnek Görseller"
+        outputs=output
     )
 
     gr.Markdown("""
----
-**Model:** ResNet18 (Transfer Learning)  
-**Veri Seti:** RealWaste  
-**Sınıf Sayısı:** 9  
-""")
+    ---
+    **Model:** ResNet18 (Transfer Learning)  
+    **Veri Seti:** RealWaste  
+    **Sınıf Sayısı:** 9  
+    """)
 
-# ===============================
-# ÇALIŞTIR
-# ===============================
-if __name__ == "__main__":
-    demo.launch(share=True)
+demo.launch()
+
+
 
 
 
