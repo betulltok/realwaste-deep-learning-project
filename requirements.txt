@@ -1,7 +1,9 @@
 torch
 torchvision
+gradio
+Pillow
 scikit-learn
 matplotlib
 seaborn
-gradio
+
 
