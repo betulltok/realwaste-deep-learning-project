@@ -27,7 +27,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ===============================
 model = models.resnet18(weights=None)
 model.fc = nn.Linear(model.fc.in_features, len(class_names))
-model.load_state_dict(torch.load("models/realwaste_model.pth", map_location=device))
+model.load_state_dict(torch.load("models/realwaste_resnet18.pth", map_location=device))
 model.to(device)
 model.eval()
 
