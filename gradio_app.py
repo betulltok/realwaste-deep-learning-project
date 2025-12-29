@@ -1,10 +1,19 @@
 import gradio as gr
 import torch
+import torch.nn as nn
 import torchvision.transforms as transforms
+from torchvision import models
 from PIL import Image
 import os
 
-from src.model import get_model
+# --------------------
+# MODEL TANIMI
+# --------------------
+def get_model(num_classes):
+    """ResNet18 modeli oluştur"""
+    model = models.resnet18(pretrained=False)
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    return model
 
 # --------------------
 # MODEL YÜKLEME
@@ -17,7 +26,6 @@ CLASS_NAMES = [
 ]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 model = get_model(num_classes=len(CLASS_NAMES))
 model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
 model.to(device)
@@ -40,111 +48,84 @@ transform = transforms.Compose([
 # --------------------
 def predict(image):
     if image is None:
-        return "Lütfen bir görüntü yükleyin."
-
-    image = transform(image).unsqueeze(0).to(device)
-
+        return "Lütfen bir görüntü yükleyin.", None
+    
+    # PIL Image'e çevir
+    if not isinstance(image, Image.Image):
+        image = Image.fromarray(image)
+    
+    img_tensor = transform(image).unsqueeze(0).to(device)
+    
     with torch.no_grad():
-        outputs = model(image)
+        outputs = model(img_tensor)
         probs = torch.softmax(outputs, dim=1)[0]
         pred_idx = torch.argmax(probs).item()
-
-    result = f"""
-    Tahmin Edilen Sınıf: {CLASS_NAMES[pred_idx]}
-
-    Olasılık Değeri: {probs[pred_idx]*100:.2f} %
-    """
-    return result
-
-# --------------------
-# ÖRNEK GÖRSELLER
-# --------------------
-examples = [
-    "demo_images/carton.jpg",
-    "demo_images/organic.jpg",
-    "demo_images/plastic.jpg"
-]
+    
+    # Tüm sınıflar için olasılıklar
+    confidence_dict = {CLASS_NAMES[i]: float(probs[i]) for i in range(len(CLASS_NAMES))}
+    
+    result_text = f"**Tahmin:** {CLASS_NAMES[pred_idx]}\n**Güven:** %{probs[pred_idx]*100:.1f}"
+    
+    return result_text, confidence_dict
 
 # --------------------
-# CSS (RENK + BOYUT DÜZENİ)
+# ÖRNEK GÖRSELLER (varsa)
 # --------------------
-custom_css = """
-body {
-    background-color: #f4f6f9;
-}
+example_images = []
+if os.path.exists("demo_images"):
+    for img_name in ["carton.jpg", "organic.jpg", "plastic.jpg"]:
+        img_path = os.path.join("demo_images", img_name)
+        if os.path.exists(img_path):
+            example_images.append(img_path)
 
-#title {
-    text-align: center;
-    font-size: 28px;
-    font-weight: 700;
-    color: #1f2937;
-}
-
-#subtitle {
-    text-align: center;
-    font-size: 16px;
-    color: #4b5563;
-    margin-bottom: 20px;
-}
-
-.gr-button {
-    background-color: #2563eb !important;
-    color: white !important;
-    border-radius: 8px;
-}
-
-.gr-box {
-    border-radius: 12px;
-}
-"""
+# Eğer örnek görseller yoksa boş liste kullan
+if not example_images:
+    example_images = None
 
 # --------------------
 # ARAYÜZ
 # --------------------
-with gr.Blocks() as demo:
-
-    gr.Markdown(
-        "<div id='title'>Atık Görüntülerinde Derin Öğrenme ile Sınıflandırma</div>"
-    )
-    gr.Markdown(
-        "<div id='subtitle'>RealWaste veri seti ile eğitilmiş ResNet18 modeli</div>"
-    )
-
+with gr.Blocks(theme=gr.themes.Soft()) as demo:
+    
+    gr.Markdown("# Atık Sınıflandırma Sistemi")
+    gr.Markdown("ResNet18 modeli ile atık türü tahmini")
+    
     with gr.Row():
-        with gr.Column(scale=1):
+        with gr.Column():
             image_input = gr.Image(
-                label="Atık Görüntüsü",
-                type="pil",
-                height=250
+                label="Görüntü Yükleyin",
+                type="pil"
             )
-            predict_btn = gr.Button("Tahmin Et")
-
-        with gr.Column(scale=1):
+            predict_btn = gr.Button("Tahmin Et", variant="primary")
+            
+            if example_images:
+                gr.Examples(
+                    examples=example_images,
+                    inputs=image_input,
+                    label="Örnek Görseller"
+                )
+        
+        with gr.Column():
             output_text = gr.Textbox(
-                label="Model Çıktısı",
-                lines=6
+                label="Sonuç",
+                lines=3
             )
-
-    gr.Examples(
-        examples=examples,
-        inputs=image_input,
-        label="Hazır Örnekler (Tıklayarak Deneyin)"
-    )
-
+            output_chart = gr.Label(
+                label="Olasılık Dağılımı",
+                num_top_classes=9
+            )
+    
     predict_btn.click(
         fn=predict,
         inputs=image_input,
-        outputs=output_text
+        outputs=[output_text, output_chart]
     )
 
 # --------------------
 # ÇALIŞTIR
 # --------------------
-demo.launch(
-    css=custom_css,
-    theme=gr.themes.Base(),
-    share=True
-)
+if __name__ == "__main__":
+    demo.launch(share=True)
 
 
 
