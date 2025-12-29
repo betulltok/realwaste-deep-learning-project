@@ -93,7 +93,8 @@ with gr.Blocks() as demo:
         with gr.Column():
             image_input = gr.Image(
                 label="Görüntü Yükleyin",
-                type="pil"
+                type="pil",
+                height=300
             )
 
             predict_btn = gr.Button("Tahmin Et")
