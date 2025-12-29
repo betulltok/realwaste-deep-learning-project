@@ -76,9 +76,9 @@ def predict(image):
 # ÖRNEK GÖRSELLER
 # --------------------
 example_images = [
-    "demo_images/carton.jpg",
-    "demo_images/organic.jpg",
-    "demo_images/plastic.jpg"
+    "demo_images/carton.jpeg",
+    "demo_images/organic.jpeg",
+    "demo_images/plastic.jpeg"
 ]
 
 # --------------------
