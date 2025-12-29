@@ -21,8 +21,8 @@ MODEL_PATH = "models/realwaste_resnet18.pth"
 
 CLASS_NAMES = [
     "Cardboard", "Food Organics", "Glass",
-    "Metal", "Paper", "Plastic",
-    "Textile Trash", "Vegetation", "Wood"
+    "Metal", "Miscellaneous Trash", "Paper",
+    "Plastic", "Textile Trash", "Vegetation"
 ]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
